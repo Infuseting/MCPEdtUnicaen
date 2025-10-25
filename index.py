@@ -1,4 +1,4 @@
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 import math
 import json
 import os
@@ -28,34 +28,60 @@ _MY_EDT = os.getenv("MY_EDT", "").strip() or None
 
 
 
-mcp = FastMCP(
-    "EDT Unicaen MCP Server",
-    host=_MCP_HOST,
-    port=_MCP_PORT,
-    mount_path=_MCP_MOUNT,
-    sse_path=_MCP_SSE_PATH,
-    message_path=_MCP_MESSAGE_PATH,
-    streamable_http_path=_MCP_MOUNT,
-)
 
+mcp = FastMCP("EDT Unicaen MCP Server")
+
+# Create SSE transport helper (used internally by FastMCP when serving SSE)
 sse_transport = SseServerTransport(_MCP_MESSAGE_PATH)
 
 
 
 @mcp.tool(name="prochain_cours", title="Prochain cours", description="Donne le prochain cours et son heure à partir du nom d'un EDT (prof/salle/student/univ). Si aucun nom n'est fourni, utilise MY_EDT si configuré. L'IA doit fournir les dates au format ISO complet (ex: 2025-10-25T08:00:00 ou 2025-10-25T08:00).")
-def prochain_cours(nom: Optional[str] = None) -> dict:
+async def prochain_cours(nom: Optional[str] = None, ctx: Optional[Context] = None) -> dict:
     """MCP tool: retourne le prochain cours (heure + résumé) pour un nom d'EDT.
 
     - recherche case-insensitive dans les fichiers locaux
     - construit l'URL ADE selon adeProjectId
     - tente de récupérer et parser un ICS pour trouver le prochain événement
     """
-    # If caller did not provide a name or used an alias for self, fall back to MY_EDT
+    # If caller did not provide a name or used an alias for self, fall back to
+    # (1) the HTTP header MY_EDT supplied by the client for this session (via ctx),
+    # (2) then to the environment variable MY_EDT.
     if not nom or not str(nom).strip() or str(nom).strip().lower() in ("me", "moi", "self"):
-        if _MY_EDT:
-            nom = _MY_EDT
+        # Try extract from context headers (session-scoped)
+        nom_from_ctx = None
+        if ctx is not None:
+            try:
+                # attempt to get request object (may be sync or awaitable)
+                print(ctx)
+                req = getattr(ctx, "request", None)
+                if req is None:
+                    get_req = getattr(ctx, "get_http_request", None)
+                    if callable(get_req):
+                        maybe = get_req()
+                        if hasattr(maybe, "__await__"):
+                            req = await maybe
+                        else:
+                            req = maybe
+                if req is not None:
+                    headers = getattr(req, "headers", None)
+                    if headers:
+                        for k in ("MY_EDT", "My-Edt", "my_edt", "X-MY-EDT"):
+                            v = headers.get(k)
+                            if v:
+                                nom_from_ctx = v
+                                break
+            except Exception:
+                nom_from_ctx = None
+
+        if nom_from_ctx:
+            nom = nom_from_ctx
         else:
-            return {"ok": False, "error": "Aucun nom fourni et MY_EDT non configuré"}
+            env = os.getenv("MY_EDT", "").strip() or None
+            if env:
+                nom = env
+            else:
+                return {"ok": False, "error": "Aucun nom fourni et MY_EDT non configuré"}
 
     matches = find_entries_by_name(nom)
     if not matches:
@@ -90,7 +116,7 @@ def prochain_cours(nom: Optional[str] = None) -> dict:
 
 
 @mcp.tool(name="disponibilite_salle", title="Disponibilité salle", description="Indique si une salle est disponible maintenant et jusqu\u2019\u00e0 quelle heure. Si une heure de debut et/ou de fin est fournie (ex: '08:00' ou ISO), limite la recherche à cette plage horaire. Les réponses incluent les dates/horaires au format ISO complet (ex: 2025-10-25T08:00:00).")
-def disponibilite_salle(nom: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None) -> dict:
+def disponibilite_salle(nom: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, ctx: Optional[Context] = None) -> dict:
     """Retourne la disponibilité d'une salle (free/busy) et l'heure de fin si occupée.
 
     Logic:
@@ -204,9 +230,22 @@ async def _health(request):
 
     return JSONResponse({"ok": True, "server": mcp.name, "mount": _MCP_MOUNT, "sse_path": _MCP_SSE_PATH})
 
+
+# Root route: return 200 to satisfy probes from connectors (some clients/bridges
+# probe `/` and treat a 404 as an error). See FastMCP/OpenAI connector notes.
+@mcp.custom_route(path="/", methods=["GET"])
+async def _root(request):
+    # Return plain text/HTML to avoid confusing probes that expect non-JSON content
+    from starlette.responses import PlainTextResponse
+
+    txt = f"{mcp.name} — SSE endpoint available at { _MCP_SSE_PATH } (MCP mount: { _MCP_MOUNT })"
+    return PlainTextResponse(txt)
+
 # execute and return the stdio output
 if __name__ == "__main__":
-    print("Starting MCP server...")
-    mcp.run("stdio")
+    print("Starting MCP server (SSE transport)...")
+    # Run the FastMCP server using the SSE transport so clients can connect via HTTP/SSE
+    # The `FastMCP` instance was configured with `sse_path` and `message_path` above.
+    mcp.run(transport="sse", host="127.0.0.1", port=8080)
     print("MCP server stopped.")
 

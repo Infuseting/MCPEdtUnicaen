@@ -1,5 +1,4 @@
-mcp 
-mcp[cli]
+fastmcp
 uvicorn
 httpx
 dotenv
