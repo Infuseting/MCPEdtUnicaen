@@ -216,7 +216,7 @@ def parse_ics_next_event(ics_text: str):
         return None
     future.sort(key=lambda e: e["start"])
     nxt = future[0]
-        return {"start": nxt["start"].isoformat(), "summary": nxt["summary"]}
+    return {"start": nxt["start"].isoformat(), "summary": nxt["summary"]}
 
 
 def parse_ics_events(ics_text: str):
