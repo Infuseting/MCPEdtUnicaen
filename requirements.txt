@@ -1,0 +1,5 @@
+mcp 
+mcp[cli]
+uvicorn
+httpx
+dotenv
