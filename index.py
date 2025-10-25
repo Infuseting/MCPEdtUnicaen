@@ -23,10 +23,6 @@ _MCP_MOUNT = os.getenv("MCP_MOUNT", "/mcp")
 _MCP_SSE_PATH = os.getenv("MCP_SSE_PATH", "/sse")
 _MCP_MESSAGE_PATH = os.getenv("MCP_MESSAGE_PATH", "/messages/")
 
-# Optional fallback: name to use when no EDT name is provided to tools.
-# Expected format: "FIRSTNAME LASTNAME" (set via environment variable MY_EDT)
-_MY_EDT = os.getenv("MY_EDT", "").strip() or None
-
 
 
 

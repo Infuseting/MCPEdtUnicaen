@@ -1,4 +1,4 @@
-from fastmcp import FastMCP, Context
+from index import mcp, Context
 import math
 import json
 import os
@@ -12,10 +12,9 @@ from typing import Optional
 from starlette.requests import Request
 from starlette.responses import Response as StarletteResponse
 from utils import *
-from mcp.server.sse import SseServerTransport
-from mcp.shared.message import ServerMessageMetadata, SessionMessage
-import mcp.types as mcp_types
 
+
+_MY_EDT = os.getenv("MY_EDT", "").strip() or None
 
 @mcp.tool(name="prochain_cours", title="Prochain cours", description="Donne le prochain cours et son heure à partir du nom d'un EDT (prof/salle/student/univ). Si aucun nom n'est fourni, utilise MY_EDT si configuré. L'IA doit fournir les dates au format ISO complet (ex: 2025-10-25T08:00:00 ou 2025-10-25T08:00).")
 async def prochain_cours(nom: Optional[str] = None, ctx: Optional[Context] = None) -> dict:
