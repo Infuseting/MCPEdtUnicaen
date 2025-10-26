@@ -97,8 +97,71 @@ async def prochain_cours(nom: Optional[str] = None, ctx: Optional[Context] = Non
 
         # The update endpoint returns JSON (see the provided PHP). Try parsing JSON first.
         update_next = parse_update_json_and_next_event(content)
+        # Build a richer event (try to extract location and professor) by parsing
+        # the full events list and matching the next event.
+        def extract_location_from_ev(ev):
+            raw = ev.get("raw")
+            if isinstance(raw, dict):
+                return raw.get("LOCATION") or raw.get("location") or raw.get("room") or raw.get("Salle")
+            if isinstance(raw, str):
+                m = re.search(r"LOCATION:([^\r\n]+)", raw)
+                if m:
+                    return m.group(1).strip()
+            return None
+
+        def extract_prof_from_ev(ev):
+            raw = ev.get("raw")
+            if isinstance(raw, dict):
+                for k in ("INTERVENANT", "PROF", "TEACHER", "ENSEIGNANT", "ORGANIZER", "AUTHOR"):
+                    v = raw.get(k) or raw.get(k.lower())
+                    if v:
+                        return v
+                # sometimes professor is inside summary
+                s = raw.get("SUMMARY") or raw.get("summary") or ""
+                if isinstance(s, str):
+                    return s
+            if isinstance(raw, str):
+                # try ORGANIZER or SUMMARY contains professor
+                m = re.search(r"ORGANIZER:[^\r\n]*CN=([^;\r\n]+)", raw)
+                if m:
+                    return m.group(1).strip()
+                m2 = re.search(r"SUMMARY:([^\r\n]+)", raw)
+                if m2:
+                    # heuristic: split on '-' or '—' and return second part if looks like a name
+                    s = m2.group(1).strip()
+                    parts = re.split(r"[-—]", s)
+                    if len(parts) > 1:
+                        return parts[-1].strip()
+                    return s
+            return None
+
         if update_next:
-            return {"ok": True, "source": url, "next": update_next}
+            # try to find the matching event in parsed JSON events for richer info
+            try:
+                events = parse_update_json_events(content)
+            except Exception:
+                events = []
+            rich = None
+            if events:
+                # convert update_next start to datetime for matching
+                try:
+                    upd_dt = datetime.datetime.fromisoformat(update_next.get("start"))
+                except Exception:
+                    upd_dt = None
+                if upd_dt:
+                    for ev in events:
+                        if ev.get("start") and ev.get("start") == upd_dt:
+                            rich = {
+                                "start": ev["start"].isoformat(),
+                                "summary": ev.get("summary"),
+                                "location": extract_location_from_ev(ev),
+                                "prof": extract_prof_from_ev(ev),
+                            }
+                            break
+            if not rich:
+                # fallback: return the simple update_next
+                return {"ok": True, "source": url, "next": update_next}
+            return {"ok": True, "source": url, "next": rich}
 
         # If no next event found in JSON, still try ICS parsing fallback in case the endpoint forwarded ICS
         ics_next = parse_ics_next_event(content)
