@@ -127,9 +127,3 @@ Contributions bienvenues : issues, PRs pour ajouter des tests, améliorer la rob
 Ce dépôt n'inclut pas de fichier `LICENSE`. Ajoutez-en un si vous souhaitez déclarer une licence explicite.
 
 ---
-
-Si vous voulez, je peux :
-
-- compléter le `readme.md` avec des exemples concrets d'appels (payloads et réponses),
-- ajouter une suite de tests minimaliste pour `utils.py`,
-- ou créer un `requirements-dev.txt` et des scripts make/shell pour développement.
